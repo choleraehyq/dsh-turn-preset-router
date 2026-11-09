@@ -1,6 +1,6 @@
 {
   "name": "dsh-turn-preset-router",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Per-turn agent preset routing for DeepSeek Harness: picks standard / PTC / minimal for every turn from local fast rules plus a small model, honours explicit user choices, and inherits on \"continue\".",
   "type": "module",
   "main": "lib/index.js",
@@ -65,5 +65,13 @@
   "bugs": {
     "url": "https://github.com/choleraehyq/dsh-turn-preset-router/issues"
   },
-  "homepage": "https://github.com/choleraehyq/dsh-turn-preset-router#readme"
+  "homepage": "https://github.com/choleraehyq/dsh-turn-preset-router#readme",
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tool-executor-ptc": "0.2.2-rc.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tool-executor-ptc": {
+      "optional": true
+    }
+  }
 }

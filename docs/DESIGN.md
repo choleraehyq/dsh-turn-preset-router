@@ -367,3 +367,36 @@ harness 用真实核心服务，但不驱动真实 agent loop。补一层真实�
    `commands.execute()`，`/mode` 正常。
 2. **`ptcRuntime` 默认未挂载。** `dsh-base` 里 `tool-executor-ptc` 是 `disabled: true`；未挂载的
    部署按 §4.3 降级 `standard`，这是设计行为。
+
+### 9.14 真实安装后 PTC 静默降级（严重缺陷修正）
+装上 GitHub/npm 版后在真实会话里复现：批量任务**判定正确为 ptc**，但实际跑成 standard，
+21 次工具调用全是 `bash`。
+
+**证据链**（来自真实会话日志 `session-a5d585fe`）：
+
+| 观察 | 含义 |
+|---|---|
+| `/mode` 输出 `最近判定：+3 批量/逐项处理，+2 数据加工` | 判定正确 = ptc |
+| 21 次 tool/call 全是 `bash` | 落地是 native |
+| `/mode` 显示 `模式：标准` + `来源：本地规则` | `applyModeSync` 返回 `fallback: true` |
+
+**根因（两层）**：
+
+1. **`ptcRuntime` 在 `apply()` 时尚未挂载。** bundle row 先于兄弟服务激活，插件加载瞬间
+   `ctx.get('ptcRuntime') === undefined`。原 `warmUp()` 见到 false 就直接 return，
+   `ptcExecutorClass` 永远是 undefined → 每次 ptc 都降级。
+   实测：`ptcRuntime at apply: MISSING` → `at agent/created: PRESENT`。
+2. **`ptcClassResolved` 提前置位。** 原实现在 import 之前就把它设为 true，即使失败也永不重试，
+   连 `/mode ptc` 也无法恢复。
+
+**修正**：
+- `warmUp()` 不再在 `ptcRuntime` 缺失时退出，而是**有界等待**（40 × 100ms = 4s）服务挂载后再 import。
+- 移除 `ptcClassResolved` 提前置位；改用 `ptcWarmUp` 共享在途 Promise，失败不锁死，可重试。
+- `PTC_SPECIFIERS` 列表化，为将来多路径解析留位。
+
+**验证**：在镜像真实 desktop 组合的 profile 上，`applyModeSync('ptc')` 返回
+`{"mode":"ptc","fallback":false}`，executor 变为 `PtcExecutor`。
+
+**为什么开发期没发现**：dev harness 里 `dev/node_modules` 软链到了 DSH 完整 node_modules，
+`ptcRuntime` 与 executor 包都立即可见，掩盖了「服务晚于插件激活」这个真实时序。
+**教训**：涉及服务可用性的逻辑，harness 必须模拟「服务晚到」，不能只测「服务已就绪」。

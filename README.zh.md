@@ -32,25 +32,48 @@ DSH 用 agent preset 决定一个会话以什么形态向模型呈现工具。�
 
 这是一个 DSH Host bundle：不需要构建，也没有运行时依赖。
 
+装完都需要**重启 DSH** —— 插件改的是 profile 的 patch 层，热重载不生效。
+
 ### 插件页（推荐）
 
-打开 **插件**，从 GitHub（本仓库地址）或本地目录安装，然后启用 `dsh-turn-preset-router`。
+打开 **插件** → **添加插件**，三选一：
+
+| 方式 | 填什么 |
+|---|---|
+| **npm 包名** | `dsh-turn-preset-router` |
+| **GitHub 仓库地址** | `choleraehyq/dsh-turn-preset-router` |
+| **本地目录** | 本检出的绝对路径，如 `/path/to/dsh-turn-preset-router` |
+
+装好后在插件页**启用**它。插件页会同时把包写进 `dependencies` 和 `dsh.profile.bundles`，这一步很关键——只装包不加 bundle 的话插件不会被加载。
+
+> 三种方式的取舍：**npm** 最省事、能收到版本更新；**GitHub** 可以钉到某个 commit；**本地目录**用 `link:` 语义，改代码重启即生效，适合开发调试。
 
 ### CLI
 
 ```sh
-dsh plugin --profile desktop add github:choleraehyq/dsh-turn-preset-router
+dsh plugin --profile <你的profile名> add dsh-turn-preset-router
 ```
 
-`--profile` 换成你自己的 profile 名。装好后在插件页启用 `dsh-turn-preset-router`——插件页会同时维护 profile 的 bundle 列表，单独执行 CLI 只安装包本身。
+⚠️ 两个注意点：
+
+1. **`desktop` profile 不能用 CLI 管理。** 它被 DSH 应用独占，CLI 会直接报
+   `profile "desktop" is managed exclusively by the Electron application`。这种情况请用上面的插件页。
+2. **CLI 只装包，不改 `dsh.profile.bundles`。** 装完还要手动把
+   `dsh-turn-preset-router` 加进 profile `package.json` 的 `dsh.profile.bundles` 数组，否则插件不会被加载。
 
 ### 开发期 overlay
 
 ```sh
-dsh --profile desktop --patch ./dev/dev.patch.yml
+dsh --profile <你的profile名> --patch ./dev/dev.patch.yml
 ```
 
-`dev/dev.patch.yml` 直接从本检出加载 `../lib/index.js`，改完代码下次启动或重载即生效，不需要装进 profile。
+`dev/dev.patch.yml` 是**覆盖式** patch（没有 `insert`），只改已安装行的 config，不会加载检出代码。要从检出直接加载插件，用 `dev/dev.insert.patch.yml`（仅适用于**未安装**该插件的 profile）：
+
+```sh
+dsh --profile <你的profile名> --patch ./dev/dev.insert.patch.yml
+```
+
+两者的区别和误用后果见 [docs/DESIGN.md](docs/DESIGN.md) §9.12。
 
 ## 使用
 
@@ -201,21 +224,32 @@ npm run real -- "你好"  # 启动真实 dsh 进程 + 真实模型跑一轮（�
 
 ```text
 dsh-turn-preset-router/
-├── package.json          # dsh.bundle.patch + engines.dsh
-├── cordis.patch.yml      # bundle patch（insert 一行 + 默认配置注释）
+├── package.json              # dsh.bundle.patch + dsh.compatibility + peerDependencies
+├── cordis.patch.yml          # bundle patch（insert 一行 + 默认配置注释）
+├── .npmrc                    # 发布指向 npmjs（无凭据）
 ├── lib/
-│   ├── index.js          # Host 插件入口：事件、/mode、状态
-│   ├── rules.js          # 本地快速规则（纯函数）
-│   ├── classifier.js     # 模型慢判（llm.stream + 解析）
-│   ├── router.js         # 状态机 + executor/restrict 落地
-│   ├── config.js         # 配置规范化
-│   └── messages.js       # 文本抽取、isContinuation、显式模式解析
-├── locale/{zh,en}.json   # 插件页标题/描述
+│   ├── index.js              # Host 插件入口：事件、/mode、状态
+│   ├── rules.js              # 本地快速规则（纯函数）
+│   ├── classifier.js         # 模型慢判（llm.stream + 解析）
+│   ├── router.js             # 状态机 + executor/restrict 落地
+│   ├── config.js             # 配置规范化
+│   └── messages.js           # 文本抽取、isContinuation、显式模式解析
+├── locale/{zh,en}.json       # 插件页标题/描述
 ├── icon.svg
-├── bin/classify.mjs      # 离线分类 CLI（调试用）
-├── test/*.test.mjs       # node:test 单测
-├── dev/                  # 真实服务 harness + overlay patch
-├── docs/DESIGN.md        # 设计契约
+├── bin/classify.mjs          # 离线分类 CLI（调试用）
+├── test/*.test.mjs           # node:test 单测（134 条）
+├── dev/
+│   ├── plugin-mount-harness.mjs      # 真实服务集成（inbox 路径）
+│   ├── presentation-harness.mjs      # executor 往返 spike
+│   ├── prestep-harness.mjs           # pre-step 安全网
+│   ├── midstep-verdict-regression.mjs # 慢判时序回归
+│   ├── run-real.sh                   # 启动真实 dsh 进程验证
+│   ├── verify-profile/               # 隔离验证 profile 模板
+│   ├── dev.patch.yml                 # 覆盖式 overlay（已安装 profile）
+│   └── dev.insert.patch.yml          # 插入式 overlay（未安装 profile）
+├── docs/
+│   ├── DESIGN.md             # 设计契约（§9 记录实施后修正）
+│   └── LOCAL-VERIFY.md       # 真实进程验证记录
 ├── README.md / README.zh.md
 └── LICENSE
 ```

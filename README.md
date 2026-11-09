@@ -32,25 +32,48 @@ The three modes:
 
 The plugin is a Host bundle: no build step, no runtime dependencies.
 
+Every route below requires a **DSH restart** — the plugin changes the profile's patch layer, which hot reload does not cover.
+
 ### Plugins page (recommended)
 
-Open **Plugins**, install from GitHub (this repository) or from a local checkout, then enable `dsh-turn-preset-router`.
+Open **Plugins** → **Add plugin**, then pick one of three sources:
+
+| Source | Value |
+|---|---|
+| **npm package name** | `dsh-turn-preset-router` |
+| **GitHub repository** | `choleraehyq/dsh-turn-preset-router` |
+| **Local directory** | absolute path to this checkout, e.g. `/path/to/dsh-turn-preset-router` |
+
+Enable the plugin afterwards. The page writes both `dependencies` and `dsh.profile.bundles` — that second write is what makes the plugin load; installing the package alone does nothing.
+
+> Which source: **npm** is the least work and receives updates; **GitHub** pins to a commit; **local directory** uses `link:` semantics so edits apply on restart, which is what you want while developing.
 
 ### CLI
 
 ```sh
-dsh plugin --profile desktop add github:choleraehyq/dsh-turn-preset-router
+dsh plugin --profile <your-profile> add dsh-turn-preset-router
 ```
 
-Substitute your own profile name for `--profile`. Then enable `dsh-turn-preset-router` on the Plugins page — the page keeps the profile's bundle list in sync; the bare CLI command only installs the package.
+Two caveats:
+
+1. **The `desktop` profile cannot be managed from the CLI.** It belongs to the DSH application, and the CLI refuses with
+   `profile "desktop" is managed exclusively by the Electron application`. Use the Plugins page there.
+2. **The CLI installs the package but does not touch `dsh.profile.bundles`.** Add
+   `dsh-turn-preset-router` to that array in the profile's `package.json` yourself, or the plugin will not load.
 
 ### Development overlay
 
 ```sh
-dsh --profile desktop --patch ./dev/dev.patch.yml
+dsh --profile <your-profile> --patch ./dev/dev.patch.yml
 ```
 
-`dev/dev.patch.yml` loads `../lib/index.js` straight from this checkout, so edits apply on the next boot or reload without installing anything into the profile.
+`dev/dev.patch.yml` is an **override** patch (no `insert`): it changes config on an already-installed row and does not load the checkout. To load the plugin straight from this checkout, use `dev/dev.insert.patch.yml` instead — and only on a profile where the plugin is *not* installed:
+
+```sh
+dsh --profile <your-profile> --patch ./dev/dev.insert.patch.yml
+```
+
+Why the two files differ, and what misuse causes, is in [docs/DESIGN.md](docs/DESIGN.md) §9.12.
 
 ## Usage
 
@@ -201,21 +224,32 @@ The design and implementation contract lives in [docs/DESIGN.md](docs/DESIGN.md)
 
 ```text
 dsh-turn-preset-router/
-├── package.json          # dsh.bundle.patch + engines.dsh
-├── cordis.patch.yml      # bundle patch (one insert row + commented defaults)
+├── package.json              # dsh.bundle.patch + dsh.compatibility + peerDependencies
+├── cordis.patch.yml          # bundle patch (one insert row + documented defaults)
+├── .npmrc                    # publishes to npmjs (no credentials)
 ├── lib/
-│   ├── index.js          # host plugin entry: events, /mode, state
-│   ├── rules.js          # local fast rules (pure functions)
-│   ├── classifier.js     # model-based slow classification (llm.stream + parsing)
-│   ├── router.js         # state machine + executor/restrict application
-│   ├── config.js         # config normalisation
-│   └── messages.js       # text extraction, isContinuation, explicit-mode parsing
-├── locale/{zh,en}.json   # plugin page title/description
+│   ├── index.js              # host entry: events, /mode, state
+│   ├── rules.js              # local fast rules (pure functions)
+│   ├── classifier.js         # slow model verdict (llm.stream + parse)
+│   ├── router.js             # state machine + executor/restrict application
+│   ├── config.js             # config normalization
+│   └── messages.js           # text extraction, isContinuation, explicit-mode parsing
+├── locale/{zh,en}.json       # Plugins page title/description
 ├── icon.svg
-├── bin/classify.mjs      # offline classifier CLI (debugging)
-├── test/*.test.mjs       # node:test unit suites
-├── dev/                  # real-service harnesses + overlay patch
-├── docs/DESIGN.md        # design contract
+├── bin/classify.mjs          # offline classifier CLI (debugging)
+├── test/*.test.mjs           # node:test unit suite (134 tests)
+├── dev/
+│   ├── plugin-mount-harness.mjs       # real-service integration (inbox path)
+│   ├── presentation-harness.mjs       # executor round-trip spike
+│   ├── prestep-harness.mjs            # pre-step safety net
+│   ├── midstep-verdict-regression.mjs # classifier timing regression
+│   ├── run-real.sh                    # boot a real dsh process to verify
+│   ├── verify-profile/                # isolated verification profile template
+│   ├── dev.patch.yml                  # override overlay (plugin already installed)
+│   └── dev.insert.patch.yml           # insert overlay (plugin not installed)
+├── docs/
+│   ├── DESIGN.md             # design contract (§9 records post-implementation fixes)
+│   └── LOCAL-VERIFY.md       # real-process verification record
 ├── README.md / README.zh.md
 └── LICENSE
 ```

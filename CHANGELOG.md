@@ -10,10 +10,11 @@ While the major version is `0`, a minor bump may contain behaviour changes.
 
 ## [0.2.0] — 2026-11-09
 
-Fixes four of the five correctness issues reported in #1, plus the `sticky`
-configuration semantics from #4. The remaining part of #4 — widening
-`parseExplicitMode` to accept "explicit mode prefix + task content" — is still
-open.
+Fixes all five correctness issues reported in #1. For the last part of #4 —
+recognising an explicit mode request embedded in a longer message — the slow
+classifier handles it rather than a widened local parser: the local path would
+need negative-lookahead rules for questions, negations and quotations, which is
+both complex and easy to get wrong.
 
 ### Fixed
 
@@ -52,10 +53,22 @@ open.
   prompt guidance — which no longer tells the model that only a few tools are
   visible when the full set is.
 
+### Added
+
+- **The classifier now recognises an explicit mode request inside a longer
+  message (#4, last part).** "用 ptc 模式帮我处理这些文件" is no longer treated as
+  a plain task-shape judgement: the prompt gives an explicit request top
+  priority, and the reply carries an `explicit` flag. A verdict flagged explicit
+  becomes a sticky preference exactly as the local parser's would; a
+  shape-based verdict never does, so the router cannot pin a mode the user did
+  not ask for. Questions ("解释一下 ptc 模式是什么") and negations ("别用 ptc")
+  are excluded by the prompt.
+
 ### Changed
 
 - `createRouter` exposes 15 methods (adds `handleClaimed`).
-- `parseClassification` returns `null` instead of a synthesized fallback verdict.
+- `parseClassification` returns `null` instead of a synthesized fallback verdict,
+  and its successful result now carries `explicit`.
 - `inspect()` reports `requestedMode`, `pendingMode`, `minimalDegraded`,
   `minimalDegradedReason` and `taskRevision`.
 - The integration harnesses emit both `inserted` and `claimed` to model a turn.

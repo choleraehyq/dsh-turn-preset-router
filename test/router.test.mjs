@@ -525,3 +525,17 @@ test('router: 新任务使旧任务的停泊模式失效（§9.15 / issue #2）'
   const pending = router.inspect(agent).pendingMode
   assert.ok(pending === null || pending.revision === router.inspect(agent).taskRevision, '旧 revision 的停泊项不应被提交')
 })
+
+// ---------------------------------------------------------------------------
+// §9.17 模型识别的显式要求 → 粘性偏好
+// ---------------------------------------------------------------------------
+
+test('router: inspect 报告 requestedMode 与 pendingMode（§9.15）', async () => {
+  const router = makeRouter()
+  const agent = stubAgent()
+  await router.prepare(agent)
+  router.route(agent, '/mode ptc')
+  const state = router.inspect(agent)
+  assert.equal(state.requestedMode, 'ptc', '应记录请求的模式')
+  assert.equal(typeof state.taskRevision, 'number', '应暴露任务版本')
+})

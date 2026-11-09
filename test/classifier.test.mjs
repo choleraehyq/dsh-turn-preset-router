@@ -16,7 +16,8 @@ const ROUTABLE = ['standard', 'ptc', 'minimal']
 function expectShape(result) {
   assert.equal(typeof result, 'object')
   assert.ok(result !== null)
-  assert.deepEqual(Object.keys(result).sort(), ['confidence', 'mode', 'reason'])
+  assert.deepEqual(Object.keys(result).sort(), ['confidence', 'explicit', 'mode', 'reason'])
+  assert.equal(typeof result.explicit, 'boolean')
   assert.ok(ROUTABLE.includes(result.mode), `mode 非法: ${result.mode}`)
   assert.equal(typeof result.reason, 'string')
   assert.equal(typeof result.confidence, 'number')
@@ -61,7 +62,7 @@ test('classifier: system prompt 明确禁止 markdown 围栏', () => {
 
 test('classifier: 解析裸 JSON', () => {
   const result = expectShape(parseClassification('{"mode":"ptc","reason":"批量任务","confidence":0.9}', 'standard'))
-  assert.deepEqual(result, { mode: 'ptc', reason: '批量任务', confidence: 0.9 })
+  assert.deepEqual(result, { mode: 'ptc', reason: '批量任务', confidence: 0.9, explicit: false })
 })
 
 test('classifier: 三种合法 mode 都能解析', () => {
@@ -76,13 +77,13 @@ test('classifier: 三种合法 mode 都能解析', () => {
 test('classifier: 剥 ```json 围栏', () => {
   const text = '```json\n{"mode":"minimal","reason":"最小工具集","confidence":0.4}\n```'
   const result = expectShape(parseClassification(text, 'standard'))
-  assert.deepEqual(result, { mode: 'minimal', reason: '最小工具集', confidence: 0.4 })
+  assert.deepEqual(result, { mode: 'minimal', reason: '最小工具集', confidence: 0.4, explicit: false })
 })
 
 test('classifier: 剥无语言标记的 ``` 围栏', () => {
   const text = '```\n{"mode":"standard","reason":"简单问答","confidence":1}\n```'
   const result = expectShape(parseClassification(text, 'ptc'))
-  assert.deepEqual(result, { mode: 'standard', reason: '简单问答', confidence: 1 })
+  assert.deepEqual(result, { mode: 'standard', reason: '简单问答', confidence: 1, explicit: false })
 })
 
 test('classifier: 围栏前后有说明文字也能解析', () => {
@@ -139,6 +140,38 @@ test('classifier: fallbackMode 取值不影响合法 mode 的解析', () => {
 })
 
 // parseClassification：confidence clamp
+// ---------------------------------------------------------------------------
+// parseClassification：explicit 标记
+// ---------------------------------------------------------------------------
+
+// `explicit` records that the user asked for a mode by name. Only that kind of
+// verdict becomes a sticky preference, so a wrong `true` would pin a mode the
+// user never asked for.
+test('classifier: explicit:true 被识别', () => {
+  const result = expectShape(parseClassification('{"mode":"ptc","reason":"x","confidence":0.9,"explicit":true}', 'standard'))
+  assert.equal(result.explicit, true)
+})
+
+test('classifier: 缺省 explicit 视为 false', () => {
+  assert.equal(parseClassification('{"mode":"ptc","confidence":0.9}', 'standard').explicit, false)
+})
+
+test('classifier: explicit 非布尔值不当作 true', () => {
+  for (const bad of ['true', 1, 'yes', null, {}, []]) {
+    const raw = JSON.stringify({ mode: 'ptc', confidence: 0.9, explicit: bad })
+    assert.equal(parseClassification(raw, 'standard').explicit, false, `explicit 应为 false: ${JSON.stringify(bad)}`)
+  }
+})
+
+test('classifier: system prompt 要求模型区分显式要求与询问', () => {
+  const system = buildClassifierSystem()
+  assert.ok(system.includes('明确要求'), 'prompt 应指示采纳用户显式要求的模式')
+  assert.ok(system.includes('explicit'), 'prompt 应说明 explicit 字段')
+  assert.ok(system.includes('询问') || system.includes('解释一下'), 'prompt 应排除询问语气')
+  assert.ok(system.includes('否定'), 'prompt 应排除否定表达')
+})
+
+
 // ---------------------------------------------------------------------------
 
 test('classifier: confidence 越界被 clamp 到 [0,1]', () => {

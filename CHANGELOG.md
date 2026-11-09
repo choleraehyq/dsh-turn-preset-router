@@ -8,6 +8,54 @@ While the major version is `0`, a minor bump may contain behaviour changes.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-09
+
+Fixes four of the five correctness issues reported in #1. Issue #4 (the
+`sticky` configuration semantics and explicit-mode parsing) is still open.
+
+### Fixed
+
+- **A message appended while a step was running broke that step (#1).** The
+  plugin treated `agent/inbox/inserted` as a safe switch point, but that event
+  fires from `send()`, which also runs while a step is in flight. Because
+  `ToolsService.execute()` re-selects the executor at dispatch time, swapping
+  there made the running step dispatch its already-fixed catalog against the
+  wrong executor and fail with `UNKNOWN_TOOL` in both directions.
+
+  A turn is now two phases: `inserted` records the decision, and the new
+  `agent/inbox/claimed` event commits it. `claimed` is emitted by `preStep()`
+  immediately before `tools.resolve()`, which is the only moment a change is
+  guaranteed to affect the coming step and unable to affect a running one.
+  Every commit path funnels through one gate, including `/mode`.
+
+- **A late classifier verdict could reroute a newer task (#2).** Verdicts and
+  parked modes now carry the task revision they were decided under; a result
+  whose revision no longer matches is dropped instead of applied.
+
+- **An unparsable model reply was treated as a valid `standard` verdict (#3).**
+  `parseClassification` now returns `null` for empty output, non-JSON, failed
+  parsing, a non-object value, or a missing/unknown `mode`. Synthesizing a
+  verdict made a broken classifier look like a confident opinion.
+
+- **`minimal` could fail to narrow the tool set while still claiming it had
+  (#5).** When the allowlist matches nothing or `tools.restrict()` rejects it,
+  the degradation is now reported in `/mode`, in the status block, and in the
+  prompt guidance — which no longer tells the model that only a few tools are
+  visible when the full set is.
+
+### Changed
+
+- `createRouter` exposes 15 methods (adds `handleClaimed`).
+- `parseClassification` returns `null` instead of a synthesized fallback verdict.
+- `inspect()` reports `requestedMode`, `pendingMode`, `minimalDegraded`,
+  `minimalDegradedReason` and `taskRevision`.
+- The integration harnesses emit both `inserted` and `claimed` to model a turn.
+
+### Notes
+
+- A mode decided mid-step takes effect at the next step, not immediately. That
+  is the point: the running step already committed to a tool catalog.
+
 ## [0.1.1] — 2026-11-09
 
 ### Fixed
@@ -78,6 +126,7 @@ Initial release.
 - The `0.1.0` tarball on npm carries the PTC-degradation bug described under
   `0.1.1`. Install `0.1.1` or later.
 
-[Unreleased]: https://github.com/choleraehyq/dsh-turn-preset-router/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/choleraehyq/dsh-turn-preset-router/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/choleraehyq/dsh-turn-preset-router/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/choleraehyq/dsh-turn-preset-router/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/choleraehyq/dsh-turn-preset-router/releases/tag/v0.1.0

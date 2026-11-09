@@ -171,10 +171,14 @@ async function build({ verdict, delayMs = 10 }) {
    * Replay one turn up to the point where its catalog is fixed and the model is
    * about to stream. Returns the fixed catalog and its tool admission.
    */
-  const startTurn = async (text) => {
+  const startTurn = async (text, { claim = true } = {}) => {
     const message = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text }] }
     messages.push(message)
     root.emit(agentCarrier(agent), 'agent/inbox/inserted', { agent, message })
+    // A turn's commit point is the claim, which the driver emits from `preStep`
+    // before it resolves the step's tool admission. Tests that model a
+    // mid-step arrival pass `claim: false` and claim later.
+    if (claim) root.emit(agentCarrier(agent), 'agent/inbox/claimed', { agent, message })
     const toolSet = await root.get('tools').resolve({ agent, modelSelection, signal })
     const assembly = await root
       .get('systemPrompt')

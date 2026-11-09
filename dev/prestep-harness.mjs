@@ -126,6 +126,32 @@ async function build(options = {}) {
   await root.plugin(T.ToolsService, {})
   await root.plugin(NAT)
 
+  // A mutable turn-boundary source. The router reads it to decide whether a
+  // mode change may be committed now or must be parked: while a step is in
+  // flight it parks, and the next claim commits. Tests flip `midStep` around
+  // each driver phase to exercise both sides.
+  const boundary = { midStep: false, agents: [] }
+  class FakeAgents extends Service {
+    constructor(ctx) {
+      super(ctx, 'agents')
+    }
+    turnBoundaryOf() {
+      return boundary.midStep
+        ? { openTurnStartSeq: 1, lastStepStartSeq: 2, lastStepBoundary: { kind: 'start', seq: 2 }, lastTurn: 1 }
+        : { openTurnStartSeq: null, lastStepStartSeq: 2, lastStepBoundary: { kind: 'end', seq: 3 }, lastTurn: 1 }
+    }
+    roots() {
+      return boundary.agents
+    }
+    list() {
+      return boundary.agents
+    }
+    __setMidStep(value) {
+      boundary.midStep = value
+    }
+  }
+  new FakeAgents(root)
+
   const tools = root.get('tools')
   for (const name of TOOL_NAMES) tools.register(makeTool(name))
 
@@ -167,7 +193,23 @@ function makeAgent(root, id) {
   }
   const scope = createScope(root, agent)
   agent.ctx = scope.ctx
+  // Register as a root agent so the router's `shouldHandle` admits it.
+  root.get('agents')?.roots()?.push?.(agent)
+  const registered = root.get('agents')
+  if (registered !== undefined) {
+    const list = registered.roots()
+    if (Array.isArray(list) && !list.includes(agent)) list.push(agent)
+  }
   return { agent, scope, messages }
+}
+
+/**
+ * Set whether a step is in flight, as the driver's turn-boundary projection
+ * would report. Every mode change passes through this judgement.
+ */
+function setMidStep(root, value) {
+  const agents = root.get('agents')
+  if (agents !== undefined) agents.__setMidStep?.(value)
 }
 
 /** Run the loop's `agent/created` step and wait for the bootstrap to settle. */
@@ -221,8 +263,11 @@ async function preStep(ctx, position = {}) {
   const { root, agent, signal, modelSelection } = ctx
   const { turn = 1, step = 1, claimed = [], onProceed } = position
 
-  // 1. claim — the driver takes this step's messages from the inbox.
+  // 1. claim — the driver takes this step's messages from the inbox and emits
+  //    `agent/inbox/claimed`. That event is the commit point: the router applies
+  //    any parked mode there, before step 2 fixes the tool admission.
   const messages = claimed
+  for (const message of claimed) root.emit(agentCarrier(agent), 'agent/inbox/claimed', { agent, message })
 
   // 2. resolve — the step's tool admission is fixed here.
   const toolSet = await root.get('tools').resolve({ agent, modelSelection, signal })
@@ -288,13 +333,20 @@ async function scenarioInboxRouted(root) {
     changes += 1
   })
 
+  // The message arrives while the previous step is still running, so the
+  // decision must be parked rather than committed.
+  setMidStep(root, true)
   const message = userMessage(BATCH)
   messages.push(message)
   root.emit(agentCarrier(agent), 'agent/inbox/inserted', { agent, message })
-  checkEqual(await freshNames(ctx), ['run_code'], 'the inbox handler routed this turn synchronously')
-  check(changes === 1, `the inbox swap emitted exactly one tools/change (got ${changes})`)
+  checkEqual(await freshNames(ctx), NATIVE, 'the inbox event records the decision without swapping')
+  check(changes === 0, `the inbox event emitted no tools/change (got ${changes})`)
 
+  // The next step claims its input, which is the commit point.
+  setMidStep(root, false)
   const turn = await preStep(ctx, { claimed: [message] })
+  checkEqual(await freshNames(ctx), ['run_code'], 'the claim committed the decision before resolution')
+  check(changes === 1, `the claim emitted exactly one tools/change (got ${changes})`)
   checkEqual(turn.names, ['run_code'], 'the step catalog is the routed one')
   await settle(20)
   check(changes === 1, `the safety net did not re-route an already-routed turn (got ${changes} tools/change)`)
@@ -350,6 +402,10 @@ async function scenarioInboxMissed(root, deploymentDefault) {
   const nextMessage = userMessage('继续')
   messages.push(nextMessage)
   root.emit(agentCarrier(agent), 'agent/inbox/inserted', { agent, message: nextMessage })
+  // The commit point is the claim, which the next `preStep` performs before it
+  // resolves that step's tool admission.
+  setMidStep(root, false)
+  root.emit(agentCarrier(agent), 'agent/inbox/claimed', { agent, message: nextMessage })
   checkEqual(await freshNames(ctx), ['run_code'], 'the next turn consumes the recorded decision and exposes run_code')
   checkEqual(executorName(ctx), 'PtcExecutor', 'the next turn selects the PTC executor')
 
@@ -388,17 +444,24 @@ async function scenarioOncePerTurn(root) {
     changes += 1
   })
 
+  // The safety net records a decision for a turn the inbox never saw. It must
+  // do so without swapping inside this step, and a second step in the same turn
+  // must not record again (the turn is already routed).
+  setMidStep(root, true)
   await preStep(ctx, { turn: 1, step: 1, claimed: [message] })
   await settle(30)
   check(changes === 0, `the first pre-step recorded without swapping (got ${changes} tools/change)`)
 
+  // The second step's claim commits the parked decision: exactly one swap, and
+  // no further one on later steps because the applied mode already matches.
+  setMidStep(root, false)
   await preStep(ctx, { turn: 1, step: 2, claimed: [message] })
   await settle(20)
-  check(changes === 0, `a second step in the same turn does not re-route (got ${changes} tools/change)`)
+  check(changes === 1, `the claim committed the parked decision once (got ${changes} tools/change)`)
 
   await preStep(ctx, { turn: 2, step: 1, claimed: [message] })
   await settle(20)
-  check(changes === 0, `a later turn still records without swapping (got ${changes} tools/change)`)
+  check(changes === 1, `a later turn does not swap again (got ${changes} tools/change)`)
 
   off()
   await scope.dispose()
@@ -480,9 +543,12 @@ async function scenarioDefaultMode() {
     await settle(50)
     checkEqual(executorName(ctx), 'NativeToolExecutor', 'the safety net did not swap the executor mid-step')
 
-    // The recorded default is applied by the next turn's inbox event.
+    // The recorded default lands when the next turn claims its input, which is
+    // the commit point.
     const message = userMessage('继续')
+    setMidStep(root, false)
     root.emit(agentCarrier(agent), 'agent/inbox/inserted', { agent, message })
+    root.emit(agentCarrier(agent), 'agent/inbox/claimed', { agent, message })
     checkEqual(await freshNames(ctx), ['run_code'], 'the next turn applies the recorded defaultMode = ptc')
     check(
       root.get('tools').selectExecutor(agent) instanceof PTC.PtcExecutor,

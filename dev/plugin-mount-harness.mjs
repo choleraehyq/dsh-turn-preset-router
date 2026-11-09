@@ -134,14 +134,33 @@ async function build(options = {}) {
     (await root.get('systemPrompt').assemble({ agent, scope: agent })).tools.map((tool) => tool.name).sort()
 
   /** Deliver one user message and read the tool catalog WITHOUT yielding. */
+  // A turn is two events under the current contract: `inserted` records the
+  // decision, `claimed` commits it before the step's tool catalog is resolved.
+  // Both are synchronous, so reading the catalog right after `claimed` proves
+  // the change lands in that step.
   const send = (text) => {
+    const message = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text }] }
+    messages.push(message)
+    root.emit('agent/inbox/inserted', { agent, message })
+    root.emit('agent/inbox/claimed', { agent, message })
+    return tools()
+  }
+
+  /** Deliver a message that arrives while a step is in flight (no claim yet). */
+  const sendMidStep = (text) => {
     const message = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text }] }
     messages.push(message)
     root.emit('agent/inbox/inserted', { agent, message })
     return tools()
   }
 
-  return { root, agent, scope, tools, send, llm }
+  /** The step boundary the router reads to decide whether it may commit. */
+  const claim = () => {
+    root.emit('agent/inbox/claimed', { agent, message: messages[messages.length - 1] })
+    return tools()
+  }
+
+  return { root, agent, scope, tools, send, sendMidStep, claim, llm }
 }
 
 async function main() {

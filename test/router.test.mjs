@@ -77,7 +77,7 @@ async function readyRouter(overrides = {}, services = {}) {
 // 导出面（Lead 冻结）
 // ---------------------------------------------------------------------------
 
-test('router: createRouter 暴露冻结契约里的全部方法（§9.8 恰好 14 个）', () => {
+test('router: createRouter 暴露冻结契约里的全部方法（§9.15 恰好 15 个）', () => {
   const router = makeRouter()
   const required = [
     'warmUp',
@@ -85,6 +85,10 @@ test('router: createRouter 暴露冻结契约里的全部方法（§9.8 恰好 1
     'route',
     'applyModeSync',
     'handleUserMessage',
+    // §9.15: the commit point. `inserted` only records intent; this applies it
+    // when the next step claims its input, which is the one moment a swap is
+    // guaranteed to affect the coming step and unable to affect a running one.
+    'handleClaimed',
     'handlePreStep',
     'bootstrap',
     'forceMode',
@@ -98,9 +102,10 @@ test('router: createRouter 暴露冻结契约里的全部方法（§9.8 恰好 1
   for (const key of required) {
     assert.equal(typeof router[key], 'function', `缺少冻结契约方法 ${key}`)
   }
-  // DESIGN §9.8：createRouter 恰好返回 14 个方法；recoverSticky 为内部函数不对外暴露
   assert.deepEqual(Object.keys(router).sort(), [...required].sort())
   assert.equal(Object.hasOwn(router, 'recoverSticky'), false, 'recoverSticky 不应对外暴露（§9.8）')
+  assert.equal(Object.hasOwn(router, 'isMidStep'), false, 'isMidStep 是内部判据，不对外暴露')
+  assert.equal(Object.hasOwn(router, 'commit'), false, 'commit 是内部闸门，不对外暴露')
 })
 
 test('router: 模块导出 ROUTABLE_MODES / SOURCES / MODE_LABELS', () => {
@@ -397,4 +402,108 @@ test('router: modelEnabled=false 时不做模型补判（needsModel 仍如实上
   // 关掉模型后不得异步改写判定
   await new Promise((resolve) => setTimeout(resolve, 10))
   assert.equal(router.inspect(agent).lastDecision.confidence, 0.4, 'modelEnabled=false 时判定不应被模型改写')
+})
+
+// ---------------------------------------------------------------------------
+// §9.15 提交边界：mid-step 只记录、下一步提交
+// ---------------------------------------------------------------------------
+
+/** ctx 桩：`agents` 报告指定的 step 边界，使 isMidStep 可控。 */
+function boundaryCtx({ midStep }) {
+  return {
+    get(name) {
+      if (name !== 'agents') return undefined
+      return {
+        turnBoundaryOf: () =>
+          midStep
+            ? { openTurnStartSeq: 5, lastStepStartSeq: 7, lastStepBoundary: { kind: 'start', seq: 7 }, lastTurn: 1 }
+            : { openTurnStartSeq: null, lastStepStartSeq: 7, lastStepBoundary: { kind: 'end', seq: 9 }, lastTurn: 1 },
+        roots: () => [globalThis.__boundaryAgent].filter(Boolean),
+        list: () => [globalThis.__boundaryAgent].filter(Boolean),
+      }
+    },
+    emit() {},
+    logger: () => ({ warn() {}, info() {} }),
+  }
+}
+
+function readyAgent(router) {
+  const agent = stubAgent('boundary-agent')
+  globalThis.__boundaryAgent = agent
+  return agent
+}
+
+test('router: mid-step 的显式切换被停泊，不在当前 step 生效（§9.15）', async () => {
+  const router = createRouter(boundaryCtx({ midStep: true }), normalizeConfig({}))
+  const agent = readyAgent(router)
+  await router.prepare(agent)
+
+  const result = router.route(agent, '/mode ptc')
+  assert.equal(result.deferred, true, 'mid-step 应停泊而不是立即切换')
+  assert.equal(router.inspect(agent).pendingMode.mode, 'ptc', '停泊的模式应记录为待生效')
+  assert.equal(router.inspect(agent).sticky.mode, 'ptc', '用户偏好仍应被记住')
+})
+
+test('router: handleClaimed 提交停泊的模式（§9.15）', async () => {
+  let midStep = true
+  const ctx = boundaryCtx({ midStep })
+  // A mutable boundary so the same router sees mid-step then step-end.
+  ctx.get = (name) => {
+    if (name !== 'agents') return undefined
+    return {
+      turnBoundaryOf: () =>
+        midStep
+          ? { openTurnStartSeq: 5, lastStepBoundary: { kind: 'start', seq: 7 }, lastTurn: 1 }
+          : { openTurnStartSeq: null, lastStepBoundary: { kind: 'end', seq: 9 }, lastTurn: 1 },
+      roots: () => [globalThis.__boundaryAgent].filter(Boolean),
+      list: () => [globalThis.__boundaryAgent].filter(Boolean),
+    }
+  }
+  const router = createRouter(ctx, normalizeConfig({}))
+  const agent = readyAgent(router)
+  await router.prepare(agent)
+
+  router.route(agent, '/mode minimal')
+  assert.equal(router.inspect(agent).pendingMode.mode, 'minimal')
+
+  midStep = false
+  router.handleClaimed(agent)
+  assert.equal(router.inspect(agent).pendingMode, null, '提交后不应残留待生效模式')
+})
+
+test('router: 新任务使旧任务的停泊模式失效（§9.15 / issue #2）', async () => {
+  let midStep = true
+  const ctx = boundaryCtx({ midStep })
+  ctx.get = (name) => {
+    if (name !== 'agents') return undefined
+    return {
+      turnBoundaryOf: () =>
+        midStep
+          ? { openTurnStartSeq: 5, lastStepBoundary: { kind: 'start', seq: 7 }, lastTurn: 1 }
+          : { openTurnStartSeq: null, lastStepBoundary: { kind: 'end', seq: 9 }, lastTurn: 1 },
+      roots: () => [globalThis.__boundaryAgent].filter(Boolean),
+      list: () => [globalThis.__boundaryAgent].filter(Boolean),
+    }
+  }
+  const router = createRouter(ctx, normalizeConfig({}))
+  const agent = readyAgent(router)
+  await router.prepare(agent)
+
+  // Task A parks a mode under revision N.
+  router.route(agent, '遍历所有文件统计行数')
+  const parkedRevision = router.inspect(agent).pendingMode?.revision
+  assert.equal(typeof parkedRevision, 'number', '停泊项应携带 task revision')
+
+  // A newer substantive task bumps the revision, so the parked mode is stale.
+  router.handleUserMessage(agent, {
+    role: 'user',
+    source: { kind: 'user' },
+    content: [{ type: 'text', text: '帮我看看这个' }],
+  })
+  assert.ok(router.inspect(agent).taskRevision > parkedRevision, '新实质任务应推进 revision')
+
+  midStep = false
+  router.handleClaimed(agent)
+  const pending = router.inspect(agent).pendingMode
+  assert.ok(pending === null || pending.revision === router.inspect(agent).taskRevision, '旧 revision 的停泊项不应被提交')
 })

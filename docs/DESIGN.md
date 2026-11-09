@@ -400,3 +400,47 @@ harness 用真实核心服务，但不驱动真实 agent loop。补一层真实�
 **为什么开发期没发现**：dev harness 里 `dev/node_modules` 软链到了 DSH 完整 node_modules，
 `ptcRuntime` 与 executor 包都立即可见，掩盖了「服务晚于插件激活」这个真实时序。
 **教训**：涉及服务可用性的逻辑，harness 必须模拟「服务晚到」，不能只测「服务已就绪」。
+
+### 9.15 提交边界重构（issue #1 / #2 / #3 / #5）
+issue #1 报告了 5 处一致性问题，实测全部成立。本版修复 #1/#2/#3/#5，#4 待议。
+
+#### 9.15.1 决策与提交分离（#1）
+**根因**：原实现假设 `agent/inbox/inserted` 是唯一安全窗口。**这个假设是错的** ——
+`send()` 在 agent 运行时也会 `inbox.splice()` → 同步 emit `inserted` → 才 `wakeDriver()`。
+而 `ToolsService.execute()` 在 dispatch 时按作用域重选 executor，所以 mid-step 换 executor
+会让正在跑的 step 用旧 catalog dispatch 到新 executor → `UNKNOWN_TOOL`（双向）。
+
+**修法**：
+- `agent/inbox/inserted` → 只**决策**（写 `pendingMode`，不动 executor）
+- `agent/inbox/claimed` → **提交**。它由 `preStep()` 在 `tools.resolve()` **之前** emit，
+  是唯一「保证影响即将开始的 step、且不可能影响正在跑的 step」的时刻。
+- 判据 `isMidStep(agent)`：读 `agents.turnBoundaryOf(session)` 的
+  `openTurnStartSeq !== null && lastStepBoundary.kind === 'start'`。
+- 所有落地路径收敛到 `commit()` 这一个闸门：mid-step 则停泊，否则立即 `applyModeSync`。
+
+#### 9.15.2 任务版本校验（#2）
+`state.taskRevision` 由每个实质新任务自增。停泊项与后台判定都携带决策时的 revision；
+消费时 revision 不匹配即丢弃。这修掉了「旧任务的迟到判定污染新任务」。
+`parseClassification` 的失败结果不再被误当作判定（见 9.15.3），所以污染路径只剩一条，
+已被 revision 封死。
+
+#### 9.15.3 不可解析输出不再伪造判定（#3）
+`parseClassification()` 现在对以下输入返回 `null`（无判定）而非合成的 `standard`：
+空串、无 JSON、JSON 解析失败、非对象、`mode` 缺失/非字符串/不在 `ROUTABLE_MODES` 内。
+理由：合成判定会让「分类器坏了」看起来像「模型有明确意见」，上层会停泊它并在后续轮次
+切走一个本地规则本来判对的模样。
+
+#### 9.15.4 降级状态如实上报（#5）
+`minimal` 的 allowlist 过滤后为空、或 `tools.restrict()` 被拒绝时，`minimalDegraded` 置位
+并记录 `minimalDegradedReason`。三处展示全部同步：
+- `/mode` 命令输出加「降级：…（实际仍是完整工具集）」
+- `statusText` 加降级行与「待生效」行
+- `guidanceText` 在降级时改为「minimal 模式未能收窄工具集，当前仍可看到并使用完整工具」，
+  不再声称「只暴露极少数工具」
+
+#### 9.15.5 契约变化
+- `createRouter` 返回 15 个方法（新增 `handleClaimed`）；`isMidStep` / `commit` 为内部函数。
+- `parseClassification` 返回类型变为 `Verdict | null`。
+- `inspect()` 新增 `requestedMode` / `pendingMode` / `minimalDegraded` /
+  `minimalDegradedReason` / `taskRevision`。
+- 集成 harness 需要同时 emit `inserted`（决策）与 `claimed`（提交）才构成一个完整轮次。

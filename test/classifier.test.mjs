@@ -107,40 +107,37 @@ test('classifier: mode 大小写不敏感、容忍前后空白', () => {
 })
 
 // ---------------------------------------------------------------------------
-// parseClassification：非法 mode 回落
+// parseClassification：非法 mode / 缺失 mode → 无判定
 // ---------------------------------------------------------------------------
 
-test('classifier: 非法 mode 回落 fallbackMode', () => {
+// A malformed or out-of-vocabulary reply is reported as *no verdict* (`null`),
+// never as a synthesized verdict for the fallback mode. Synthesizing one made a
+// broken classifier look like a confident opinion, so the caller would park it
+// and later switch away from a mode the local rules had chosen correctly.
+test('classifier: 非法 mode 返回 null（不伪造 fallback 判定）', () => {
   for (const fallback of ROUTABLE) {
-    const result = expectShape(parseClassification('{"mode":"bogus","reason":"x","confidence":0.5}', fallback))
-    assert.equal(result.mode, fallback, `非法 mode 应回落 ${fallback}`)
-    assert.equal(result.reason, 'x', 'mode 非法时 reason 仍应保留')
-    assert.equal(result.confidence, 0.5)
+    assert.equal(parseClassification('{"mode":"bogus","reason":"x","confidence":0.5}', fallback), null)
   }
 })
 
-test('classifier: 缺失 mode 回落 fallbackMode', () => {
+test('classifier: 缺失 mode 返回 null', () => {
   for (const fallback of ROUTABLE) {
-    const result = expectShape(parseClassification('{"reason":"x","confidence":0.5}', fallback))
-    assert.equal(result.mode, fallback)
+    assert.equal(parseClassification('{"reason":"x","confidence":0.5}', fallback), null)
   }
 })
 
-test('classifier: mode 非字符串回落 fallbackMode', () => {
+test('classifier: mode 非字符串返回 null', () => {
   for (const bad of [1, null, {}, [], true]) {
-    const result = expectShape(parseClassification(JSON.stringify({ mode: bad, confidence: 0.5 }), 'minimal'))
-    assert.equal(result.mode, 'minimal', `mode 非字符串应回落: ${JSON.stringify(bad)}`)
+    assert.equal(parseClassification(JSON.stringify({ mode: bad, confidence: 0.5 }), 'minimal'), null)
   }
 })
 
-test('classifier: fallbackMode 本身非法时回落 standard', () => {
+test('classifier: fallbackMode 取值不影响合法 mode 的解析', () => {
   for (const bad of ['bogus', 'auto', '', null, undefined, 42]) {
-    const result = expectShape(parseClassification('{"mode":"bogus"}', bad))
-    assert.equal(result.mode, 'standard', `非法 fallbackMode 应回落 standard: ${JSON.stringify(bad)}`)
+    assert.equal(parseClassification('{"mode":"ptc","confidence":0.5}', bad).mode, 'ptc')
   }
 })
 
-// ---------------------------------------------------------------------------
 // parseClassification：confidence clamp
 // ---------------------------------------------------------------------------
 
@@ -192,28 +189,21 @@ test('classifier: 缺失/非字符串 reason 视为空串', () => {
 // parseClassification：不可解析输入
 // ---------------------------------------------------------------------------
 
-test('classifier: 不可解析输入返回 fallbackMode + confidence 0', () => {
+test('classifier: 不可解析输入返回 null', () => {
   const inputs = ['not json at all', '', '   ', 'no braces here', '[1,2,3]', 'null', '42', '{}']
   for (const input of inputs) {
     for (const fallback of ROUTABLE) {
-      const result = expectShape(parseClassification(input, fallback))
-      assert.equal(result.mode, fallback, `不可解析输入应回落 ${fallback}: ${JSON.stringify(input)}`)
-      assert.equal(result.confidence, 0, `不可解析输入 confidence 应为 0: ${JSON.stringify(input)}`)
+      assert.equal(parseClassification(input, fallback), null, `不可解析输入应返回 null: ${JSON.stringify(input)}`)
     }
   }
 })
 
-test('classifier: 非字符串入参不抛异常', () => {
+test('classifier: 非字符串入参返回 null 且不抛异常', () => {
   for (const input of [null, undefined, 42, {}, []]) {
-    const result = expectShape(parseClassification(input, 'ptc'))
-    assert.equal(result.mode, 'ptc')
-    assert.equal(result.confidence, 0)
+    assert.equal(parseClassification(input, 'ptc'), null)
   }
 })
 
-test('classifier: 截断的 JSON 不抛异常，回落 fallback', () => {
-  const truncated = '{"mode":"ptc","reason":"未闭合'
-  const result = expectShape(parseClassification(truncated, 'standard'))
-  assert.equal(result.mode, 'standard')
-  assert.equal(result.confidence, 0)
+test('classifier: 截断的 JSON 返回 null', () => {
+  assert.equal(parseClassification('{"mode":"ptc","reason":"未闭合', 'standard'), null)
 })

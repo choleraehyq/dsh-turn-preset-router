@@ -59,7 +59,8 @@
     "prestep": "node dev/prestep-harness.mjs",
     "verify": "node --test test/*.test.mjs && node dev/plugin-mount-harness.mjs && node dev/presentation-harness.mjs && node dev/prestep-harness.mjs && node dev/midstep-verdict-regression.mjs",
     "regression": "node dev/midstep-verdict-regression.mjs",
-    "real": "./dev/run-real.sh"
+    "real": "./dev/run-real.sh",
+    "prepublishOnly": "node --test test/*.test.mjs"
   },
   "bugs": {
     "url": "https://github.com/choleraehyq/dsh-turn-preset-router/issues"

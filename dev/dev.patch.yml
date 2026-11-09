@@ -1,0 +1,29 @@
+# Development overlay: override the router's config in a profile that ALREADY
+# has this plugin installed as a bundle.
+#
+#   dsh --profile desktop --patch ./dev/dev.patch.yml
+#
+# Edits to lib/ take effect on the next launch or reload (the bundle's own
+# `cordis.patch.yml` still names the installed package; this overlay only
+# changes the row's config).
+#
+# Two loader facts this file is shaped around:
+#
+#  1. `insert` always APPENDS. An overlay that inserted this row would leave two
+#     routers mounted whenever the bundle is also installed, and both would fight
+#     over the same agent scopes. So an installed-profile overlay must override
+#     the existing row instead.
+#  2. In a non-insert patch, `name` is a *guard*, not a field to set: a value that
+#     differs from the target row's name skips the whole patch. The installed
+#     row is named `dsh-turn-preset-router`, so this patch omits `name` entirely.
+#
+# To load a checkout into a profile with NO installed bundle, use
+# `dev/dev.insert.patch.yml` (the `insert` form) instead.
+- id: dsh-turn-preset-router
+  config:
+    enabled: true
+    defaultMode: 'standard'
+    # Turn the slow classifier off while iterating on the local rules.
+    modelEnabled: false
+    guidance: true
+    sticky: true

@@ -1,0 +1,68 @@
+{
+  "name": "dsh-turn-preset-router",
+  "version": "0.1.0",
+  "description": "Per-turn agent preset routing for DeepSeek Harness: picks standard / PTC / minimal for every turn from local fast rules plus a small model, honours explicit user choices, and inherits on \"continue\".",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./rules": "./lib/rules.js",
+    "./messages": "./lib/messages.js",
+    "./classifier": "./lib/classifier.js",
+    "./config": "./lib/config.js",
+    "./router": "./lib/router.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "bin": {
+    "dsh-turn-preset-classify": "./bin/classify.mjs"
+  },
+  "files": [
+    "lib/",
+    "bin/",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "agent-preset",
+    "preset-router",
+    "auto-mode",
+    "ptc",
+    "turn-routing"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/choleraehyq/dsh-turn-preset-router.git"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "classify": "node bin/classify.mjs",
+    "integration": "node dev/plugin-mount-harness.mjs",
+    "spike": "node dev/presentation-harness.mjs",
+    "prestep": "node dev/prestep-harness.mjs",
+    "verify": "node --test test/*.test.mjs && node dev/plugin-mount-harness.mjs && node dev/presentation-harness.mjs && node dev/prestep-harness.mjs && node dev/midstep-verdict-regression.mjs",
+    "regression": "node dev/midstep-verdict-regression.mjs",
+    "real": "./dev/run-real.sh"
+  },
+  "bugs": {
+    "url": "https://github.com/choleraehyq/dsh-turn-preset-router/issues"
+  },
+  "homepage": "https://github.com/choleraehyq/dsh-turn-preset-router#readme"
+}

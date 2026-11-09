@@ -1,0 +1,17 @@
+# Model overlay for the verification profile.
+#
+# The verification run needs *a* model to talk to, but which provider that is
+# belongs to whoever runs it — not to this repository. The default here uses the
+# stock DeepSeek provider that ships with DSH; supply the key in the launching
+# environment:
+#
+#   export DEEPSEEK_API_KEY=...
+#
+# To verify against a different provider, copy this file, point
+# `agent-default-model` at that provider/model, and pass your copy as the first
+# `--patch` instead. Nothing in the plugin itself depends on a particular route.
+- id: agent-default-model
+  config:
+    provider: deepseek-official
+    model: deepseek-flash
+    reasoningEffort: medium

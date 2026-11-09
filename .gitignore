@@ -1,0 +1,12 @@
+# Dev-only resolution shims: both point at the local DSH installation's
+# node_modules so the dev harnesses can import @deepseek-ai/*. Recreate them with
+# the commands in dev/README.md; never commit them.
+node_modules
+dev/node_modules
+
+# Throwaway DSH_HOME built by dev/run-real.sh (real-process verification).
+.dsh-verify-home
+
+# Editor / OS noise
+.DS_Store
+*.log

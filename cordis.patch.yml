@@ -1,0 +1,53 @@
+# dsh-turn-preset-router bundle patch
+#
+# One Host row. The router then owns the per-turn mode of every root agent it
+# adopts: it picks standard / ptc / minimal before each turn and applies the
+# choice by swapping that agent scope's tool executor.
+#
+# Every field is optional; the defaults below are the shipped behaviour.
+- insert:
+    - id: dsh-turn-preset-router
+      name: 'dsh-turn-preset-router'
+      config:
+        # Master switch. false loads the plugin but routes nothing.
+        enabled: true
+
+        # Mode used when no decision can be made: no task text, no model route,
+        # a classifier timeout, or a PTC runtime that is not mounted.
+        defaultMode: 'standard'
+
+        # Model used for the slow decision. Only reached when the local rules
+        # are unsure, so it stays off the common path.
+        provider: ''
+        model: 'deepseek-v4-flash'
+        modelMaxTokens: 256
+        modelTemperature: 0
+        modelTimeoutMs: 8000
+
+        # Whether to consult the model at all when the local rules are unsure.
+        # A verdict cannot decide the turn that asked for it (the Harness fixes
+        # a turn's tool catalog before any awaited hook runs), so it refines a
+        # later turn. Set false to keep routing purely local.
+        modelEnabled: true
+
+        # Tools visible in minimal mode. Names must exist in the deployment;
+        # unknown names are logged and ignored rather than failing the turn.
+        minimalAllowlist:
+          - bash
+          - read_file
+          - write_file
+          - edit_file
+
+        # Root agents only; subagents keep the composition they were given.
+        applyToSubagents: false
+
+        # One short prompt paragraph telling the model which mode is active.
+        guidance: true
+
+        # Extra keyword tuning; each match adds weight to its side.
+        extraPtc: []
+        extraStandard: []
+
+        # Remember an explicit user choice (/mode ptc, "用 ptc 模式") until the
+        # user restores automatic routing with /mode auto.
+        sticky: true

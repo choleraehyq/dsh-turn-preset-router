@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "按轮 Preset 路由",
+    "description": "每轮对话前自动选择 standard / ptc / minimal 工具模式，本地规则优先，可用 /mode 手动接管。"
+  }
+}

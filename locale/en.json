@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Turn Preset Router",
+    "description": "Picks standard, ptc, or minimal tool mode for each turn from local rules first, with /mode for manual and sticky overrides."
+  }
+}

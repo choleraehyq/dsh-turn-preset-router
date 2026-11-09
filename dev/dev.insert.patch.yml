@@ -1,0 +1,17 @@
+# Development overlay for a profile where this plugin is NOT installed as a bundle.
+#
+#   dsh --profile desktop --patch ./dev/dev.insert.patch.yml
+#
+# This uses `insert` because there is no existing row to override. Do NOT use
+# this form when the bundle is already installed: `applyPatches` appends
+# inserted rows regardless of id, so the profile would end up with two routers
+# mounted on the same agents. Use `dev.patch.yml` (the override form) instead.
+- insert:
+    - id: dsh-turn-preset-router
+      name: '../lib/index.js'
+      config:
+        enabled: true
+        defaultMode: 'standard'
+        modelEnabled: false
+        guidance: true
+        sticky: true

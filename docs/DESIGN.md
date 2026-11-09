@@ -444,3 +444,30 @@ issue #1 报告了 5 处一致性问题，实测全部成立。本版修复 #1/#
 - `inspect()` 新增 `requestedMode` / `pendingMode` / `minimalDegraded` /
   `minimalDegradedReason` / `taskRevision`。
 - 集成 harness 需要同时 emit `inserted`（决策）与 `claimed`（提交）才构成一个完整轮次。
+
+### 9.16 sticky 语义修正（issue #4 前两项）
+issue #4 的第三条（放宽 `parseExplicitMode` 的解析范围）留待单独设计；前两条已修。
+
+**统一语义**：`sticky` 只控制「是否把显式选择**记忆**为后续偏好」，
+**不控制**该选择在当轮是否生效。
+
+修正前有两处偏差：
+
+1. **`route()` 把整个显式分支包在 `if (config.sticky)` 里。** 于是 `sticky: false` 时
+   `/mode minimal` 被完全忽略，当轮仍走自动判定 —— 用户看到的是「命令没生效」，
+   而配置项本意只是「不要记住它」。
+   修正：显式解析与当轮落地移出条件；只有 `state.sticky = {...}` 这行受 `config.sticky` 控制。
+
+2. **`forceMode()` 无条件写 `state.sticky`。** 同一次 `/mode` 操作，经命令入口与经文本入口
+   在 `sticky: false` 下行为不一致。
+   修正：`forceMode()` 的 sticky 写入同样受 `config.sticky` 控制。
+
+`recoverSticky()`（resume 后从 session log 恢复偏好）原本就受 `config.sticky` 门控，无需改动 ——
+`sticky: false` 的部署本就不该把历史偏好重新激活。
+
+**行为矩阵**（修后）：
+
+| 配置 | `/mode minimal` 当轮 | 后续轮 | `inspect().sticky` |
+|---|---|---|---|
+| `sticky: true` | minimal | 沿用 minimal | `{mode:'minimal'}` |
+| `sticky: false` | minimal | 回到自动判定 | `null` |

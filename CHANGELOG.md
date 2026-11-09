@@ -10,8 +10,10 @@ While the major version is `0`, a minor bump may contain behaviour changes.
 
 ## [0.2.0] — 2026-11-09
 
-Fixes four of the five correctness issues reported in #1. Issue #4 (the
-`sticky` configuration semantics and explicit-mode parsing) is still open.
+Fixes four of the five correctness issues reported in #1, plus the `sticky`
+configuration semantics from #4. The remaining part of #4 — widening
+`parseExplicitMode` to accept "explicit mode prefix + task content" — is still
+open.
 
 ### Fixed
 
@@ -36,6 +38,13 @@ Fixes four of the five correctness issues reported in #1. Issue #4 (the
   `parseClassification` now returns `null` for empty output, non-JSON, failed
   parsing, a non-object value, or a missing/unknown `mode`. Synthesizing a
   verdict made a broken classifier look like a confident opinion.
+
+- **`sticky: false` silently disabled explicit mode selection (#4, part).** The
+  whole explicit-choice branch was gated on the config flag, so `/mode minimal`
+  was ignored outright instead of merely not being remembered. `sticky` now
+  governs only whether a choice is remembered; it always applies to the turn
+  that stated it. `forceMode()` follows the same rule — it previously wrote the
+  preference unconditionally, so the command path and the text path disagreed.
 
 - **`minimal` could fail to narrow the tool set while still claiming it had
   (#5).** When the allowlist matches nothing or `tools.restrict()` rejects it,

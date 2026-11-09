@@ -223,10 +223,28 @@ test('router: /mode auto 清除粘性偏好并回到自动判定', async () => {
   assert.notEqual(result.source, SOURCES.USER, '清除后应回到自动判定')
 })
 
-test('router: sticky=false 时不记忆显式偏好', async () => {
+test('router: sticky=false 不记忆显式偏好，但当轮仍然生效', async () => {
   const { router, agent } = await readyRouter({ sticky: false })
-  router.route(agent, '/mode ptc')
+  const result = router.route(agent, '/mode ptc')
+  // `sticky` governs remembering, never the current turn's decision. Gating the
+  // whole explicit branch on it made "/mode ptc" a silent no-op.
+  assert.equal(result.source, SOURCES.USER, '显式选择在当轮仍应生效')
+  assert.equal(result.decidedMode, 'ptc', '当轮应判为 ptc')
   assert.equal(router.inspect(agent).sticky, null, 'sticky=false 时不应记录偏好')
+})
+
+test('router: sticky=false 时后续轮次不沿用显式偏好', async () => {
+  const { router, agent } = await readyRouter({ sticky: false })
+  router.route(agent, '/mode minimal')
+  const later = router.route(agent, '解释一下这个函数')
+  assert.notEqual(later.source, SOURCES.USER, '后续轮不应再以用户偏好为由路由')
+})
+
+test('router: forceMode 在 sticky=false 时也不写偏好', async () => {
+  const { router, agent } = await readyRouter({ sticky: false })
+  const result = await router.forceMode(agent, 'minimal')
+  assert.equal(result.mode, 'minimal', 'forceMode 当轮仍应生效')
+  assert.equal(router.inspect(agent).sticky, null, 'sticky=false 时命令路径也不应记录偏好')
 })
 
 test('router: 「继续」沿用上一轮判定，不重新分类', async () => {

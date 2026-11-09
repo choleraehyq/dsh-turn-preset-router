@@ -1,0 +1,72 @@
+name: CI
+
+# The unit suite is the only layer that runs here. The four integration
+# harnesses under dev/ mount real DSH services (`@deepseek-ai/*` packages, a
+# `ptcRuntime` provider) that only exist inside a DSH installation, so they are
+# deliberately excluded — see dev/README.md for how to run them locally.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: unit tests (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 is the oldest LTS the plugin's ESM-only layout targets; 24 is the
+        # version DSH 0.2.2 ships with.
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Verify the package declares a bundle patch
+        # A missing or mis-typed dsh.bundle.patch would make the plugin
+        # uninstallable while every unit test still passed.
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const patch = pkg?.dsh?.bundle?.patch;
+            if (typeof patch !== "string") {
+              console.error("package.json is missing dsh.bundle.patch");
+              process.exit(1);
+            }
+            if (!fs.existsSync(patch)) {
+              console.error(`dsh.bundle.patch points at a missing file: ${patch}`);
+              process.exit(1);
+            }
+            console.log(`bundle patch: ${patch}`);
+          '
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Check the offline classifier CLI
+        run: |
+          node bin/classify.mjs "遍历所有目录，统计每个目录的文件行数并汇总成表格" --json \
+            | node -e '
+              let raw = "";
+              process.stdin.on("data", (chunk) => { raw += chunk; });
+              process.stdin.on("end", () => {
+                const out = JSON.parse(raw);
+                if (out.mode !== "ptc") {
+                  console.error(`expected a batch task to route to ptc, got ${out.mode}`);
+                  process.exit(1);
+                }
+                console.log(`classifier OK: ${out.mode} (${out.confidence})`);
+              });
+            '

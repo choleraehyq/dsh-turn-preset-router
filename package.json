@@ -52,6 +52,10 @@
       "patch": "./cordis.patch.yml"
     }
   },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "classify": "node bin/classify.mjs",

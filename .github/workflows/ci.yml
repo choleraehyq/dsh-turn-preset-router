@@ -52,6 +52,33 @@ jobs:
             console.log(`bundle patch: ${patch}`);
           '
 
+      - name: Verify the DSH compatibility declaration
+        # DSH reads `engines.dsh` and ignores `dsh.compatibility`. When the only
+        # effective declaration was an exact-version peer, every DSH prerelease
+        # bump refused to install the plugin while all unit tests still passed.
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const range = pkg?.engines?.dsh;
+            if (typeof range !== "string" || range.trim() === "") {
+              console.error("package.json is missing engines.dsh; DSH would fall back to peer ranges only");
+              process.exit(1);
+            }
+            if (Object.hasOwn(pkg?.dsh ?? {}, "compatibility")) {
+              console.error("dsh.compatibility is not read by DSH; declare the range in engines.dsh instead");
+              process.exit(1);
+            }
+            for (const [name, peer] of Object.entries(pkg.peerDependencies ?? {})) {
+              if (name !== "@deepseek-ai/dsh" && !name.startsWith("@deepseek-ai/dsh-")) continue;
+              if (!peer.includes(">") && !peer.includes("<") && !peer.includes("^") && !peer.includes("~") && !peer.includes("*")) {
+                console.error(`peer ${name} is pinned to an exact version (${peer}); a DSH prerelease bump would refuse the install`);
+                process.exit(1);
+              }
+            }
+            console.log(`engines.dsh: ${range}`);
+          '
+
       - name: Run unit tests
         run: npm test
 

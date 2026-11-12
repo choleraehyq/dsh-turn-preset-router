@@ -9,7 +9,7 @@
 
 ## 2. 已核实的 DSH 事实（不要重新假设）
 
-运行环境：DSH `0.2.2-rc.1`，Node `24.21.0`，pnpm `11.28.5`，profile `desktop`。
+运行环境：DSH `0.2.2-rc.2`（适配起始版本 `0.2.2-rc.1`），Node `24.21.0`，pnpm `11.28.5`，profile `desktop`。
 
 ### 2.1 preset 只能会话启动前切换
 `@deepseek-ai/dsh-agent-preset-registry` 的 `select(agent, id)` 会检查

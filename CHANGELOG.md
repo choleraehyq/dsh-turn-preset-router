@@ -8,6 +8,35 @@ While the major version is `0`, a minor bump may contain behaviour changes.
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-11-12
+
+Adapts the plugin to DSH 0.2.2-rc.2, which changed both the manifest field the
+installer reads and the agent registry API.
+
+### Fixed
+
+- **DSH 0.2.2-rc.2 refused to install this plugin.** The manifest declared the
+  supported DSH releases in `dsh.compatibility.dsh`, which DSH never reads: the
+  compatibility check reads `engines.dsh` first and otherwise every
+  `@deepseek-ai/dsh*` peer range. The only effective declaration was the
+  optional `@deepseek-ai/dsh-tool-executor-ptc` peer pinned to the exact
+  `0.2.2-rc.1`, so rc.2 refused the install with
+  `requirements {"@deepseek-ai/dsh-tool-executor-ptc":"0.2.2-rc.1"}`. The
+  supported range now lives in `engines.dsh` (`>=0.2.2-rc.1 <0.3.0-0`), and the
+  PTC peer is a range over the same minor instead of an exact version.
+
+- **Subagents were silently adopted on DSH 0.2.2-rc.2.** `shouldHandle()` asked
+  `ctx.agents.roots()` whether the Agent was a root, and rc.2 removed that
+  method along with the runtime-owner parameter — tree membership now lives in
+  the subagent service's Activations. The `TypeError` fell into a `catch` that
+  returned `true`, so with the default `applyToSubagents: false` every
+  delegated child was routed anyway, swapping the executor under a subagent
+  whose composition the deployment meant to leave alone. Root/subagent is now
+  read from the durable session header (`origin === 'subagent'`, set by the
+  subagent service on children only and present in rc.1 as well), so the same
+  build behaves correctly on both releases. An ordinary fork still keeps
+  `parentSession` and is still treated as a root.
+
 ## [0.2.0] — 2026-11-09
 
 Fixes all five correctness issues reported in #1. For the last part of #4 —
@@ -148,7 +177,8 @@ Initial release.
 - The `0.1.0` tarball on npm carries the PTC-degradation bug described under
   `0.1.1`. Install `0.1.1` or later.
 
-[Unreleased]: https://github.com/choleraehyq/dsh-turn-preset-router/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/choleraehyq/dsh-turn-preset-router/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/choleraehyq/dsh-turn-preset-router/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/choleraehyq/dsh-turn-preset-router/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/choleraehyq/dsh-turn-preset-router/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/choleraehyq/dsh-turn-preset-router/releases/tag/v0.1.0

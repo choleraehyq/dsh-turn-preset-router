@@ -140,9 +140,6 @@ async function build(options = {}) {
         ? { openTurnStartSeq: 1, lastStepStartSeq: 2, lastStepBoundary: { kind: 'start', seq: 2 }, lastTurn: 1 }
         : { openTurnStartSeq: null, lastStepStartSeq: 2, lastStepBoundary: { kind: 'end', seq: 3 }, lastTurn: 1 }
     }
-    roots() {
-      return boundary.agents
-    }
     list() {
       return boundary.agents
     }
@@ -182,6 +179,10 @@ function makeAgent(root, id) {
   const agent = {
     id,
     session: {
+      // A root agent carries no `origin`; only a delegated child does. DSH
+      // 0.2.2-rc.2 removed `agents.roots()`, so this header is what the
+      // router's `shouldHandle` reads.
+      header: { id },
       deriveMessages: () => messages.slice(),
       requestHeader: () => undefined,
       append: (type, data) => {
@@ -193,13 +194,7 @@ function makeAgent(root, id) {
   }
   const scope = createScope(root, agent)
   agent.ctx = scope.ctx
-  // Register as a root agent so the router's `shouldHandle` admits it.
-  root.get('agents')?.roots()?.push?.(agent)
-  const registered = root.get('agents')
-  if (registered !== undefined) {
-    const list = registered.roots()
-    if (Array.isArray(list) && !list.includes(agent)) list.push(agent)
-  }
+  root.get('agents')?.list()?.push?.(agent)
   return { agent, scope, messages }
 }
 

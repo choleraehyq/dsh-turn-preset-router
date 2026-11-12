@@ -216,7 +216,7 @@ The design and implementation contract lives in [docs/DESIGN.md](docs/DESIGN.md)
 - **A switch rebuilds the prefix.** Changing the mode changes the tool catalog and the system prompt, so the next request rebuilds its prefix (one KV-cache miss). That is inherent to changing the shape.
 - **`ptc` needs a mounted `ptcRuntime`.** Without one the plugin degrades to `standard` automatically and says so in `/mode`.
 - **The preset itself cannot change.** After the first turn `agentPresets.select()` is locked; the plugin owns the tool executor and the prompt section — the parts of a preset that actually vary per turn.
-- **Root agents only by default.** Subagents keep their own composition; set `applyToSubagents: true` to adopt them.
+- **Root agents only by default.** Subagents keep their own composition; set `applyToSubagents: true` to adopt them. Root vs subagent is read from the session header (`origin: 'subagent'`), because DSH 0.2.2-rc.2 removed `agents.roots()`; a plain fork still counts as a root.
 - **Disabling the model leaves only local rules.** With `modelEnabled: false` no model request is made, so the turn is decided entirely by the local rules and `defaultMode`.
 - **Sticky preferences are not written to config.** They are held per agent in plugin memory, and are recovered after resume / fork from the logged `command/run` (`/mode`) events — so a restart keeps them without touching the profile. Use `defaultMode` and `sticky` for deployment-wide behaviour.
 
@@ -224,7 +224,7 @@ The design and implementation contract lives in [docs/DESIGN.md](docs/DESIGN.md)
 
 ```text
 dsh-turn-preset-router/
-├── package.json              # dsh.bundle.patch + dsh.compatibility + peerDependencies
+├── package.json              # engines.dsh + dsh.bundle.patch + peerDependencies
 ├── cordis.patch.yml          # bundle patch (one insert row + documented defaults)
 ├── .npmrc                    # publishes to npmjs (no credentials)
 ├── lib/
@@ -237,7 +237,7 @@ dsh-turn-preset-router/
 ├── locale/{zh,en}.json       # Plugins page title/description
 ├── icon.svg
 ├── bin/classify.mjs          # offline classifier CLI (debugging)
-├── test/*.test.mjs           # node:test unit suite (134 tests)
+├── test/*.test.mjs           # node:test unit suite (145 tests)
 ├── dev/
 │   ├── plugin-mount-harness.mjs       # real-service integration (inbox path)
 │   ├── presentation-harness.mjs       # executor round-trip spike

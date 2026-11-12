@@ -216,7 +216,7 @@ npm run real -- "你好"  # 启动真实 dsh 进程 + 真实模型跑一轮（�
 - **切换会重建前缀。** 换模式会改变工具目录与系统提示，下一次请求要重建前缀（一次 KV cache 失效）。这是换模式的固有代价。
 - **`ptc` 需要挂载 `ptcRuntime`。** 未挂载时自动降级 `standard`，并在 `/mode` 里说明。
 - **preset 本身换不了。** 首轮之后 `agentPresets.select()` 被锁，插件接管的是工具执行器与提示段落，也就是 preset 中每轮真正可变的部分。
-- **默认只接管根 agent。** 子 agent 保持自己的组合；需要时设 `applyToSubagents: true`。
+- **默认只接管根 agent。** 子 agent 保持自己的组合；需要时设 `applyToSubagents: true`。根/子的判定读会话头（`origin: 'subagent'`）——DSH 0.2.2-rc.2 删除了 `agents.roots()`；普通 fork 仍算根 agent。
 - **关闭慢判只剩本地规则。** `modelEnabled: false` 时不发模型请求，本轮行为完全由本地规则与 `defaultMode` 决定。
 - **粘性偏好不写配置文件。** 它按 agent 保存在插件内存里；resume / fork 后从 session log 里的 `command/run`（`/mode`）事件恢复，因此跨进程重启仍能延续，但不会被写入 profile 配置。需要部署级默认行为请调 `defaultMode` 与 `sticky`。
 
@@ -224,7 +224,7 @@ npm run real -- "你好"  # 启动真实 dsh 进程 + 真实模型跑一轮（�
 
 ```text
 dsh-turn-preset-router/
-├── package.json              # dsh.bundle.patch + dsh.compatibility + peerDependencies
+├── package.json              # engines.dsh + dsh.bundle.patch + peerDependencies
 ├── cordis.patch.yml          # bundle patch（insert 一行 + 默认配置注释）
 ├── .npmrc                    # 发布指向 npmjs（无凭据）
 ├── lib/
@@ -237,7 +237,7 @@ dsh-turn-preset-router/
 ├── locale/{zh,en}.json       # 插件页标题/描述
 ├── icon.svg
 ├── bin/classify.mjs          # 离线分类 CLI（调试用）
-├── test/*.test.mjs           # node:test 单测（134 条）
+├── test/*.test.mjs           # node:test 单测（145 条）
 ├── dev/
 │   ├── plugin-mount-harness.mjs      # 真实服务集成（inbox 路径）
 │   ├── presentation-harness.mjs      # executor 往返 spike

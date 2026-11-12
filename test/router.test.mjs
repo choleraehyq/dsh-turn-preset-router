@@ -37,7 +37,7 @@ function stubContext(services = {}) {
 }
 
 /** 一个 agent 桩：ctx.inject 立即回调一个 agent-scope 的 toolCtx。 */
-function stubAgent(id = 'agent-1', { messages = [] } = {}) {
+function stubAgent(id = 'agent-1', { messages = [], origin, parentSession } = {}) {
   const toolCtx = {
     tools: {
       setExecutor: () => () => {},
@@ -54,6 +54,7 @@ function stubAgent(id = 'agent-1', { messages = [] } = {}) {
       },
     },
     session: {
+      header: { id, ...(origin === undefined ? {} : { origin }), ...(parentSession === undefined ? {} : { parentSession }) },
       requestHeader: () => undefined,
       deriveMessages: () => messages,
     },
@@ -302,16 +303,26 @@ test('router: 空文本消息不触发重新判定', async () => {
 })
 
 test('router: applySubagents=false 时只接管根 agent', () => {
-  const rootAgent = stubAgent('root')
-  const childAgent = stubAgent('child')
-  const agents = { roots: () => [rootAgent] }
-  const router = makeRouter({ applyToSubagents: false }, { agents })
+  // DSH 0.2.2-rc.2 removed `agents.roots()`; the durable session header is the
+  // remaining source of truth, and it is set only on delegated children.
+  const rootAgent = stubAgent('root', { origin: undefined })
+  const childAgent = stubAgent('child', { origin: 'subagent' })
+  // An ordinary fork keeps `parentSession` but is still a root.
+  const forkedAgent = stubAgent('fork', { origin: undefined, parentSession: 'root' })
+  const router = makeRouter({ applyToSubagents: false })
 
   assert.equal(router.shouldHandle(rootAgent), true)
-  assert.equal(router.shouldHandle(childAgent), false, '非根 agent 默认不接管')
+  assert.equal(router.shouldHandle(childAgent), false, '子 agent 默认不接管')
+  assert.equal(router.shouldHandle(forkedAgent), true, '普通 fork 仍是根 agent')
 
-  const withSubagents = makeRouter({ applyToSubagents: true }, { agents })
+  const withSubagents = makeRouter({ applyToSubagents: true })
   assert.equal(withSubagents.shouldHandle(childAgent), true, 'applyToSubagents=true 时应接管子 agent')
+})
+
+test('router: 没有 agents 服务时仍按会话头判定根/子 agent', () => {
+  const router = makeRouter({ applyToSubagents: false })
+  assert.equal(router.shouldHandle(stubAgent('no-agents-root')), true)
+  assert.equal(router.shouldHandle(stubAgent('no-agents-child', { origin: 'subagent' })), false)
 })
 
 test('router: forget 清除 agent 状态', async () => {
@@ -436,7 +447,6 @@ function boundaryCtx({ midStep }) {
           midStep
             ? { openTurnStartSeq: 5, lastStepStartSeq: 7, lastStepBoundary: { kind: 'start', seq: 7 }, lastTurn: 1 }
             : { openTurnStartSeq: null, lastStepStartSeq: 7, lastStepBoundary: { kind: 'end', seq: 9 }, lastTurn: 1 },
-        roots: () => [globalThis.__boundaryAgent].filter(Boolean),
         list: () => [globalThis.__boundaryAgent].filter(Boolean),
       }
     },
@@ -473,7 +483,6 @@ test('router: handleClaimed 提交停泊的模式（§9.15）', async () => {
         midStep
           ? { openTurnStartSeq: 5, lastStepBoundary: { kind: 'start', seq: 7 }, lastTurn: 1 }
           : { openTurnStartSeq: null, lastStepBoundary: { kind: 'end', seq: 9 }, lastTurn: 1 },
-      roots: () => [globalThis.__boundaryAgent].filter(Boolean),
       list: () => [globalThis.__boundaryAgent].filter(Boolean),
     }
   }
@@ -499,7 +508,6 @@ test('router: 新任务使旧任务的停泊模式失效（§9.15 / issue #2）'
         midStep
           ? { openTurnStartSeq: 5, lastStepBoundary: { kind: 'start', seq: 7 }, lastTurn: 1 }
           : { openTurnStartSeq: null, lastStepBoundary: { kind: 'end', seq: 9 }, lastTurn: 1 },
-      roots: () => [globalThis.__boundaryAgent].filter(Boolean),
       list: () => [globalThis.__boundaryAgent].filter(Boolean),
     }
   }
